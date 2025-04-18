@@ -1,0 +1,96 @@
+# Deployment for Order Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+spec:
+  replicas: 1 # Single replica
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+    spec:
+      nodeSelector:
+        "kubernetes.io/os": linux
+      containers:
+        - name: order-service
+          image: ma7aara/order-service-bb:latest # Custom image for order service
+          ports:
+            - containerPort: 3000 # Order service listens on this port
+          envFrom:
+            - configMapRef:
+                name: order-service-config
+            - secretRef:
+                name: order-service-secret
+
+            - secretRef:
+                name: makeline-service-secret
+          env:
+            - name: AZURE_SERVICE_BUS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: azure-servicebus-secret
+                  key: AZURE_SERVICE_BUS_CONNECTION_STRING
+            - name: ORDER_QUEUE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: azure-servicebus-secret
+                  key: ORDER_QUEUE_NAME
+
+            - name: ORDER_QUEUE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: order-service-secret
+                  key: ORDER_QUEUE_USERNAME
+
+            - name: ORDER_QUEUE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: order-service-secret
+                  key: ORDER_QUEUE_PASSWORD
+
+          resources: # Resource allocation
+            requests:
+              cpu: 1m
+              memory: 50Mi
+            limits:
+              cpu: 100m
+              memory: 256Mi
+          startupProbe: # Initial health check
+            httpGet:
+              path: /health
+              port: 3000
+            failureThreshold: 5
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe: # Ready status probe
+            httpGet:
+              path: /health
+              port: 3000
+            failureThreshold: 3
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe: # Ongoing health check
+            httpGet:
+              path: /health
+              port: 3000
+            failureThreshold: 5
+            initialDelaySeconds: 3
+            periodSeconds: 3
+---
+# Service for Order Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+  selector:
+    app: order-service

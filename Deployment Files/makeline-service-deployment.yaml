@@ -1,0 +1,99 @@
+# Deployment for Makeline Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: makeline-service
+spec:
+  replicas: 1 # Single replica
+  selector:
+    matchLabels:
+      app: makeline-service
+  template:
+    metadata:
+      labels:
+        app: makeline-service
+    spec:
+      nodeSelector:
+        "kubernetes.io/os": linux
+      containers:
+        - name: makeline-service
+          image: ma7aara/makeline-service-bb:latest # Custom Makeline service image
+          ports:
+            - containerPort: 3001 # Makeline service listens on this port
+          envFrom:
+            - configMapRef:
+                name: makeline-service-config
+            - configMapRef:
+                name: makeline-mongo-config
+            - configMapRef:
+                name: makeline-config
+
+            - secretRef:
+                name: makeline-service-secret
+
+          env:
+            - name: AZURE_SERVICE_BUS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: azure-servicebus-secret
+                  key: AZURE_SERVICE_BUS_CONNECTION_STRING
+
+            - name: ORDER_QUEUE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: azure-servicebus-secret
+                  key: ORDER_QUEUE_NAME
+
+            - name: ORDER_QUEUE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: makeline-service-secret
+                  key: ORDER_QUEUE_USERNAME
+
+            - name: ORDER_QUEUE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: makeline-service-secret
+                  key: ORDER_QUEUE_PASSWORD
+
+          resources: # Resource requests and limits
+            requests:
+              cpu: 1m
+              memory: 6Mi
+            limits:
+              cpu: 5m
+              memory: 20Mi
+          startupProbe: # Initial health check
+            httpGet:
+              path: /health
+              port: 3001
+            failureThreshold: 10
+            periodSeconds: 5
+          readinessProbe: # Ready status probe
+            httpGet:
+              path: /health
+              port: 3001
+            failureThreshold: 3
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe: # Ongoing health check
+            httpGet:
+              path: /health
+              port: 3001
+            failureThreshold: 5
+            initialDelaySeconds: 3
+            periodSeconds: 3
+---
+# Service for Makeline Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: makeline-service
+spec:
+  type: ClusterIP # Internal cluster service
+  ports:
+    - name: http
+      port: 3001 # Service port
+      targetPort: 3001
+  selector:
+    app: makeline-service
